@@ -1,0 +1,12 @@
+{
+  "event_id": "092601-010-sample-001",
+  "event_type": "GARMENT_ASSESSED",
+  "aggregate_type": "garment_profile",
+  "aggregate_id": "fabric_care-001",
+  "occurred_at": "2026-09-25T10:00:00+08:00",
+  "version": 1,
+  "payload": {
+    "material_evidence": "sample-material_evidence",
+    "stain_observations": "sample-stain_observations"
+  }
+}

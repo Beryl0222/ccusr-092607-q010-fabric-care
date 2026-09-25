@@ -1,0 +1,5 @@
+[project]
+name = "fabric-care"
+version = "0.1.0"
+description = "织物洗护适配判定库领域契约"
+requires-python = ">=3.11"

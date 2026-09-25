@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "织物洗护适配判定库领域事件",
+  "type": "object",
+  "required": [
+    "event_id",
+    "event_type",
+    "aggregate_type",
+    "aggregate_id",
+    "occurred_at",
+    "version",
+    "payload"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "GARMENT_ASSESSED",
+        "RULE_VERSIONED",
+        "PLAN_APPROVED",
+        "BATCH_STARTED",
+        "OUTCOME_REVIEWED"
+      ]
+    },
+    "aggregate_type": {
+      "type": "string",
+      "enum": [
+        "garment_profile",
+        "care_rule",
+        "treatment_plan",
+        "processing_batch"
+      ]
+    },
+    "aggregate_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "payload_required_by_event": {
+    "GARMENT_ASSESSED": [
+      "material_evidence",
+      "stain_observations"
+    ],
+    "PLAN_APPROVED": [
+      "rule_version",
+      "risk_level"
+    ],
+    "BATCH_STARTED": [
+      "equipment_ref",
+      "formula_lot"
+    ]
+  },
+  "additionalProperties": false
+}
