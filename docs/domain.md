@@ -1,13 +1,88 @@
 # 领域约定
 
-描述织物属性、污渍、洗剂、设备和护理规则之间的适配事件。
+描述织物属性、污渍、洗剂、设备和护理规则之间的适配事件，以及从建档到取件、复查的完整洗护工艺。
 
-聚合对象包括`garment_profile`、`care_rule`、`treatment_plan`、`processing_batch`。事件类型包括`GARMENT_ASSESSED`、`RULE_VERSIONED`、`PLAN_APPROVED`、`BATCH_STARTED`、`OUTCOME_REVIEWED`。所有发生时间都必须携带时区，版本号从 1 开始递增，基础校验不会改写调用方输入。
+## 聚合与状态
 
-## 事件载荷
+聚合对象包括 `garment_profile`、`care_rule`、`treatment_plan`、`processing_batch`。
 
-- `GARMENT_ASSESSED`：载荷还需包含 `material_evidence`, `stain_observations`。
-- `PLAN_APPROVED`：载荷还需包含 `rule_version`, `risk_level`。
-- `BATCH_STARTED`：载荷还需包含 `equipment_ref`, `formula_lot`。
+衣物（`garment_profile`）状态机：
 
-相同事件标识的业务幂等、冲突隔离和状态推进由上层服务负责；本仓库只定义可稳定交换的基础事实。
+```
+received → quarantined ↔ received（仅工艺主管解除）
+received → released → soaking → washing → pending_recheck → ready → completed
+completed → review_due（标签更正生成复查义务，冻结依据不变）
+```
+
+事件类型包括 `GARMENT_ASSESSED`、`RULE_VERSIONED`、`PLAN_APPROVED`、`BATCH_STARTED`、
+`OUTCOME_REVIEWED`、`LABEL_CORRECTED`、`ORDER_QUARANTINED`、`SCHEDULE_CONFIRMED`、
+`REVIEW_OBLIGATION_RAISED`。所有发生时间都必须携带时区，版本号从 1 开始递增，
+基础校验不会改写调用方输入。
+
+## 判定原则
+
+1. **温度取最低上限，不按“越高越干净”排序。** 推荐温度是标签、每种已确认纤维、
+   染色牢度、辅料限温的最低值；含酶配方再压到酶活窗口内。
+2. **蛋白污渍先冷后温。** 血、蛋、奶类先冷水冲除再进入温区；预处理已受热的，
+   挂“蛋白可能固化”待确认项，按保守方案处理。
+3. **日常去污与专业消毒分流。** 消毒必须同时满足：标签允许、材质证据充分、
+   设备支持消毒温区、综合温度上限不低于消毒目标、消毒产品许可有效且覆盖全部纤维、
+   顾客书面风险确认、高风险双人批准。任一不满足则拒绝消毒（`refusals`），
+   降级为日常去污保守方案，绝不悄悄升温。
+4. **证据不足不猜材质。** 纤维置信度低于阈值、成分占比未闭合、纤维未登记时，
+   一律按 30°C 保守处理并给出待确认项（`confirmations_needed`）。
+5. **阻断与单项拒绝分离。** `rejections` 表示无可行方案；`refusals` 表示某项处理
+   （如某配方批次、消毒诉求）被拒绝，方案按保守模式继续。
+
+## 角色边界
+
+| 角色 | 能做 | 不能做 |
+| --- | --- | --- |
+| 门店人员 `store_clerk` | 录入材质观察、污渍、预处理；发起方案 | 独自批准/发布方案、批准高风险例外、解除隔离 |
+| 工艺主管 `process_supervisor` | 发布工艺、高风险例外批准、标签更正登记、隔离裁定、规则版本发布 | 改写历史标签/历史规则（只能追加新版本） |
+| 配方供应方 `formula_supplier` | 登记自己名下配方批次与效期、酶活 | 登记他人批次、改写衣物标签或规则 |
+| 顾客 `customer` | 书面风险确认 | 工艺操作 |
+
+高风险例外（`risk_level=high`）要求申请人与批准人不是同一人，且顾客已书面确认
+具体风险点。保守方案（`elevated`）发布前，工艺主管必须逐项确认全部待确认项。
+
+## 冻结与标签更正
+
+工艺发布（`PLAN_APPROVED`）瞬间冻结：规则版本、护理标签版本、全部物料批次
+（`frozen_formula_lots`，含主洗与消毒批次）、设备、推荐温度与步骤、批准人与时间。
+
+事后发现标签错误时：
+
+- **未处理订单**（含已发布未开机）：标签更新为新版本，原方案作废、重新判定；
+- **已上机/在制订单**：冻结依据不动，按原工艺完成；
+- **已完成订单**：保留原依据，状态置为 `review_due` 并生成 `REVIEW_OBLIGATION_RAISED`
+  复查义务。
+
+标签只能由工艺主管以**递增版本的更正**登记，任何角色都不能就地改写旧版本。
+
+## 幂等、隔离与排程
+
+- **扫描幂等**：同一 `scan_id` 重复扫描返回首次结果（`deduplicated=true`），
+  不再次扣减任何冻结批次库存、不重复建立批次或启动设备。
+- **冲突隔离**：订单号相同但衣物标识不同，建档即双方隔离；同一衣物重新发布时
+  温度或冻结批次与已冻结方案不同，同样隔离。隔离件不能发布、不能上机，
+  只能由工艺主管裁定（`ORDER_QUARANTINED`）。
+- **原子排程**：设备窗口占用在同一存储事务内完成检查与写入；并发批次争用同一
+  窗口只有一方成功（`window_contention`）。扣多批次库存采用先全部校验、后统一扣减。
+
+## 重启续期
+
+浸泡截止、复检期限（默认 24 小时）、取件期限（默认 72 小时）随工艺持久化。
+服务重启后调用续期接口：未到浸泡结束时间则继续浸泡，到时自动推进到水洗；
+超过复检期限不得直接放行，必须由工艺主管登记延期复查。
+
+## 解释与责任链
+
+- 解释接口返回推荐温度的解释链（`rationale`）、每一步骤的理由（`steps[].reason`）、
+  被拒处理与原因（`refusals`/`rejections`）、待确认项以及冻结依据。
+- 实际结果偏离预期（`OUTCOME_REVIEWED`）时输出责任链，按证据归因：
+  实测超标签温度 → `equipment_operation`；未超温仍缩水/褪色 → `care_label`
+  （触发标签更正与同批复查）；蛋白污渍预处理受热固化 → `intake_observation`；
+  按规则执行仍固化 → `rule_set`（规则偏差评审）；消毒失败按批次效期与设备曲线
+  区分 `formula_supplier` / `equipment_operation`；无法自动归因 → `process_review`。
+  无论归因到哪一环，标签—观察—规则—批准—配方—设备全链快照与冻结依据都随结果保留。

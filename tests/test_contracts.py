@@ -36,6 +36,20 @@ class ContractTests(unittest.TestCase):
         issues = validate_event(dict(self.sample, event_type="UNKNOWN"), self.schema)
         self.assertIn(("event_type", "unsupported_value"), [(x.field, x.code) for x in issues])
 
+    def test_new_event_envelope_is_valid(self) -> None:
+        event = dict(self.sample, event_type="LABEL_CORRECTED", payload={
+            "new_label_version": 2, "reason": "标签温度误标",
+        })
+        self.assertEqual([], validate_event(event, self.schema))
+
+    def test_new_event_payload_requirements(self) -> None:
+        event = dict(self.sample, event_type="REVIEW_OBLIGATION_RAISED", payload={
+            "reason": "标签更正",
+        })
+        issues = {(x.field, x.code) for x in validate_event(event, self.schema)}
+        self.assertIn(("payload.frozen_label_version", "required"), issues)
+        self.assertIn(("payload.new_label_version", "required"), issues)
+
 
 if __name__ == "__main__":
     unittest.main()

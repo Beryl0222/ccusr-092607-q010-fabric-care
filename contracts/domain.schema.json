@@ -23,7 +23,11 @@
         "RULE_VERSIONED",
         "PLAN_APPROVED",
         "BATCH_STARTED",
-        "OUTCOME_REVIEWED"
+        "OUTCOME_REVIEWED",
+        "LABEL_CORRECTED",
+        "ORDER_QUARANTINED",
+        "SCHEDULE_CONFIRMED",
+        "REVIEW_OBLIGATION_RAISED"
       ]
     },
     "aggregate_type": {
@@ -63,6 +67,24 @@
     "BATCH_STARTED": [
       "equipment_ref",
       "formula_lot"
+    ],
+    "LABEL_CORRECTED": [
+      "new_label_version",
+      "reason"
+    ],
+    "ORDER_QUARANTINED": [
+      "code",
+      "reason"
+    ],
+    "SCHEDULE_CONFIRMED": [
+      "order_no",
+      "start",
+      "end"
+    ],
+    "REVIEW_OBLIGATION_RAISED": [
+      "reason",
+      "frozen_label_version",
+      "new_label_version"
     ]
   },
   "additionalProperties": false
