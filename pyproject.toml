@@ -1,5 +1,5 @@
 [project]
 name = "fabric-care"
 version = "0.1.0"
-description = "织物洗护适配判定库领域契约"
+description = "织物洗护适配判定库：领域契约、判定引擎与运行时服务"
 requires-python = ">=3.11"
